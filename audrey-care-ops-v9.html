@@ -222,6 +222,7 @@
   .day-task-row:hover{border-color:var(--accent);}
   .day-task-status{font-weight:700;padding:4px 10px;border-radius:999px;font-size:11.5px;flex-shrink:0;}
   .pill{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;}
+  .chip{display:inline-block;font-size:12px;font-weight:500;padding:5px 12px;border-radius:999px;background:var(--bg);border:1px solid var(--border);color:var(--ink);}
   .pill-active{background:var(--accent-soft);color:var(--accent-dark);}
   .pill-inactive{background:#F0F0EE;color:var(--muted);}
   .pill-open{background:var(--clay-soft);color:var(--clay);}
@@ -4211,16 +4212,16 @@ function renderComplaintAccessPanel(){
       <div class="hint" style="margin-bottom:14px;">Add, rename, reorder, or remove the reasons and priority levels available when logging a complaint. Renaming one updates it everywhere it's already been used; deleting one that's still in use is blocked until it's no longer referenced.</div>
       <div class="field-row">
         <div class="field" style="flex:1;">
-          <label>Reasons <span class="hint">(${reasons.length})</span></label>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px;">
-            ${reasons.map(r=>`<span class="pill">${esc(r)}</span>`).join('') || '<span class="hint">None yet</span>'}
+          <label style="margin-bottom:10px;">Reasons <span class="hint">(${reasons.length})</span></label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+            ${reasons.map(r=>`<span class="chip">${esc(r)}</span>`).join('') || '<span class="hint">None yet</span>'}
           </div>
           <button type="button" class="btn btn-sm" id="btn-manage-complaint-reasons">⚙ Manage reasons</button>
         </div>
         <div class="field" style="flex:1;">
-          <label>Priority levels <span class="hint">(${priorities.length})</span></label>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px;">
-            ${priorities.map(p=>`<span class="pill">${esc(p)}</span>`).join('') || '<span class="hint">None yet</span>'}
+          <label style="margin-bottom:10px;">Priority levels <span class="hint">(${priorities.length})</span></label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+            ${priorities.map(p=>`<span class="chip">${esc(p)}</span>`).join('') || '<span class="hint">None yet</span>'}
           </div>
           <button type="button" class="btn btn-sm" id="btn-manage-complaint-priorities">⚙ Manage priorities</button>
         </div>
