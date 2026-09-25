@@ -90,6 +90,16 @@
   .nav-item.nav-item-unread svg{color:var(--danger);animation:nav-icon-pulse 1.3s ease-in-out infinite;}
   .nav-unread-dot{width:8px;height:8px;border-radius:50%;background:var(--danger);margin-left:auto;flex-shrink:0;animation:pulse-dot 1.6s infinite;}
   @keyframes nav-icon-pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.24);}}
+  .nav-item-row{display:flex;align-items:center;}
+  .nav-expand-btn{background:none;border:none;padding:6px;margin:0 0 2px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:6px;}
+  .nav-expand-btn:hover{background:var(--bg);}
+  .nav-expand-btn svg{width:14px;height:14px;transition:transform .18s ease;}
+  .nav-expand-btn.open svg{transform:rotate(90deg);}
+  .nav-subitems{display:flex;flex-direction:column;margin:0 0 4px;}
+  .nav-subitem{display:flex;align-items:center;gap:8px;padding:7px 12px 7px 39px;font-size:13px;font-weight:500;color:var(--muted);text-decoration:none;border-radius:8px;margin-bottom:2px;}
+  .nav-subitem:hover{background:var(--bg);color:var(--ink);}
+  .nav-subitem.active{background:var(--accent-soft);color:var(--accent-dark);font-weight:600;}
+  .nav-subitem-dash{color:inherit;opacity:.6;}
 
   .pulse-dot{width:8px;height:8px;border-radius:50%;background:var(--danger);display:inline-block;margin-right:7px;animation:pulse-dot 1.8s infinite;}
   @keyframes pulse-dot{0%{box-shadow:0 0 0 0 rgba(177,75,63,.5);}70%{box-shadow:0 0 0 7px rgba(177,75,63,0);}100%{box-shadow:0 0 0 0 rgba(177,75,63,0);}}
@@ -1354,7 +1364,9 @@ const ICONS = {
   flask:'<path d="M9 2h6"/><path d="M10 2v6.3L4.8 17a2.2 2.2 0 0 0 1.9 3.3h10.6a2.2 2.2 0 0 0 1.9-3.3L14 8.3V2"/><path d="M7.5 14.5h9"/>',
   blender:'<path d="M7.3 3h9.4l-1.5 11.2a2.2 2.2 0 0 1-2.2 1.9h-2a2.2 2.2 0 0 1-2.2-1.9L7.3 3z"/><path d="M6.8 6.8h10.4"/><path d="M9.6 9.3c.9 1 1.9 1 2.8 0 .9-1 1.9-1 2.8 0"/><path d="M9.6 12c.9 1 1.9 1 2.8 0 .9-1 1.9-1 2.8 0"/><rect x="8" y="17" width="8" height="4" rx="1.3"/><circle cx="12" cy="19" r=".6" fill="currentColor" stroke="none"/>',
   bot:'<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1.3" fill="currentColor" stroke="none"/><path d="M9 17.5h6"/><path d="M2 12v3"/><path d="M22 12v3"/>',
-  send:'<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>'
+  send:'<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>',
+  chevron:'<path d="M9 6l6 6-6 6"/>',
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>'
 };
 function icon(name){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
 const TRACK_STAGE_PATHS = [
@@ -1392,6 +1404,7 @@ let state = {
   blendBatches: [],
   branding: {addons: []},
   navOrder: {},
+  navExpanded: {blending:true},
   deliveryLines: [],
   staffCategories: [],
   complaintCategories: [],
@@ -3056,8 +3069,10 @@ const NAV = [
   {group:'Overview', items:[{id:'dashboard', label:'Dashboard', icon:'dashboard'}]},
   {group:'Operations', items:[
     {id:'orders', label:'Orders board', icon:'orders'},
-    {id:'orderinquiry', label:'Order inquiry', icon:'orders'},
-    {id:'blending', label:'Blending board', icon:'blender'},
+    {id:'orderinquiry', label:'Order inquiry', icon:'search'},
+    {id:'blending', label:'Blending board', icon:'blender', children:[
+      {id:'recipes', label:'Recipes'},
+    ]},
     {id:'customers', label:'Customers', icon:'customers'},
     {id:'suppliers', label:'Suppliers', icon:'suppliers'},
     {id:'complaints', label:'Complaints', icon:'complaints'},
@@ -3087,7 +3102,10 @@ function orderedNavItems(group, items){
 }
 function navLabel(item){ return (state.navLabels && state.navLabels[item.id]) || item.label; }
 function findNavItemById(id){
-  for(const g of NAV){ const it = g.items.find(x=>x.id===id); if(it) return it; }
+  for(const g of NAV){
+    const it = g.items.find(x=>x.id===id); if(it) return it;
+    for(const parent of g.items){ if(parent.children){ const child = parent.children.find(x=>x.id===id); if(child) return child; } }
+  }
   return null;
 }
 async function renameNavItem(id){
@@ -3103,7 +3121,8 @@ async function renameNavItem(id){
 }
 function navGroupsFor(allowedIds){
   return NAV
-    .map(g => ({ ...g, items: orderedNavItems(g.group, g.items.filter(it => allowedIds.includes(it.id))) }))
+    .map(g => ({ ...g, items: orderedNavItems(g.group, g.items.filter(it => allowedIds.includes(it.id)))
+      .map(it => it.children ? {...it, children: it.children.filter(c=>allowedIds.includes(c.id))} : it) }))
     .filter(g => g.items.length > 0);
 }
 // Finds the row a dragged sidebar-order item should be inserted before, based on cursor Y position.
@@ -3149,11 +3168,27 @@ function renderShell(){
       ${navGroups.map(g=>`
         <div class="nav-group">
           <div class="group-label">${g.group}</div>
-          ${g.items.map(it=>`
-            <a href="#${it.id}" class="nav-item ${state.page===it.id?'active':''} ${(it.id==='chat' && state.chatUnread)?'nav-item-unread':''}" data-nav="${it.id}">
+          ${g.items.map(it=>{
+            const hasChildren = it.children && it.children.length>0;
+            const expanded = hasChildren && !!(state.navExpanded && state.navExpanded[it.id]);
+            const link = `
+            <a href="#${it.id}" class="nav-item ${state.page===it.id?'active':''} ${(it.id==='chat' && state.chatUnread)?'nav-item-unread':''}" data-nav="${it.id}" style="${hasChildren?'flex:1;margin-bottom:0;':''}">
               ${icon(it.icon)}<span>${esc(navLabel(it))}</span>
               ${(it.id==='chat' && state.chatUnread)?'<span class="nav-unread-dot"></span>':''}
-            </a>`).join('')}
+            </a>`;
+            if(!hasChildren) return link;
+            return `
+            <div class="nav-item-row">
+              ${link}
+              <button type="button" class="nav-expand-btn ${expanded?'open':''}" data-nav-toggle="${it.id}" title="${expanded?'Collapse':'Expand'}">${icon('chevron')}</button>
+            </div>
+            ${expanded ? `<div class="nav-subitems">
+              ${it.children.map(c=>`
+              <a href="#${c.id}" class="nav-subitem ${state.page===c.id?'active':''}" data-nav="${c.id}">
+                <span class="nav-subitem-dash">–</span>${esc(navLabel(c))}
+              </a>`).join('')}
+            </div>` : ''}`;
+          }).join('')}
         </div>`).join('')}
       <div class="sidebar-foot">Signed in as ${esc(state.session.name)} · ${esc(state.session.role)}</div>
     </aside>
@@ -3472,10 +3507,7 @@ function renderOrderInquiryPage(){
 function renderBlendingBoardPage(){
   return `
   <div class="toolbar">
-    <div class="tabs">
-      ${pageAllowed('recipes') ? `<button class="tab" data-nav="recipes">${icon('recipe')} Recipes</button>` : ''}
-    </div>
-    ${canManageBlendBoard() ? `<button class="btn btn-primary" id="btn-new-blend">+ New batch</button>` : ''}
+    ${canManageBlendBoard() ? `<button class="btn btn-primary" id="btn-new-blend" style="margin-left:auto;">+ New batch</button>` : ''}
   </div>
   ${state.blendBatches.length===0 ? `
     <div class="empty-state">
@@ -5938,6 +5970,13 @@ function attachShellHandlers(){
     if(el.tagName==='A' && (e.ctrlKey||e.metaKey||e.shiftKey)) return; // let the browser open it in a new tab/window
     e.preventDefault();
     goTo(el.dataset.nav);
+  }));
+  document.querySelectorAll('[data-nav-toggle]').forEach(el=>el.addEventListener('click', (e)=>{
+    e.preventDefault(); e.stopPropagation();
+    const id = el.dataset.navToggle;
+    if(!state.navExpanded) state.navExpanded = {};
+    state.navExpanded[id] = !state.navExpanded[id];
+    render();
   }));
   if(byIdEl('btn-menu-toggle')) byIdEl('btn-menu-toggle').onclick = toggleSidebar;
   if(byIdEl('btn-switch-role')) byIdEl('btn-switch-role').onclick = logOut;
