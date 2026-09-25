@@ -3371,12 +3371,17 @@ function renderDeliveryBoardSection(line, active){
   </div>`;
 }
 function renderOrdersArchivePage(archived){
+  const allArchivedSelected = archived.length>0 && archived.every(o=>state.selectedOrders.has(o.id));
   return `
   <div class="toolbar">
     <div class="tabs">
       <button class="tab active" data-orders-view="kanban">${icon('orders')} Kanban</button>
     </div>
     <div style="display:flex;gap:14px;align-items:center;">
+      ${isAdmin() && archived.length>0 ? `
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;margin:0;">
+        <input type="checkbox" id="order-archive-select-all" ${allArchivedSelected?'checked':''}> Select all
+      </label>` : ''}
       ${isAdmin() && state.selectedOrders.size>0 ? `
       <span class="hint">${state.selectedOrders.size} selected</span>
       <button type="button" class="btn btn-sm btn-danger" id="btn-delete-selected-orders">Delete selected</button>
@@ -5976,6 +5981,12 @@ function attachShellHandlers(){
     if(cb.checked) state.selectedOrders.add(cb.dataset.orderId); else state.selectedOrders.delete(cb.dataset.orderId);
     render();
   }));
+  if(byIdEl('order-archive-select-all')) byIdEl('order-archive-select-all').addEventListener('change', e=>{
+    document.querySelectorAll('.order-select-row').forEach(cb=>{
+      if(e.target.checked) state.selectedOrders.add(cb.dataset.orderId); else state.selectedOrders.delete(cb.dataset.orderId);
+    });
+    render();
+  });
   if(byIdEl('btn-delete-selected-orders')) byIdEl('btn-delete-selected-orders').onclick = async ()=>{
     const n = state.selectedOrders.size;
     if(!confirm(`Delete ${n} selected order${n===1?'':'s'}? This cannot be undone.`)) return;
