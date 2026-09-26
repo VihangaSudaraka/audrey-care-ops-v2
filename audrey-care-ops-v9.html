@@ -571,6 +571,15 @@
   .live-clock-bar .clock-company{font-weight:700;color:var(--ink);letter-spacing:.01em;}
   .live-clock-bar .clock-label{color:var(--accent-dark);font-weight:600;}
   .live-clock-bar .clock-value{font-weight:600;color:var(--ink);}
+
+  /* ---------------- Printable batch sheet ---------------- */
+  @media print{
+    body *{ visibility:hidden; }
+    .batch-sheet-print, .batch-sheet-print *{ visibility:visible; }
+    .batch-sheet-print{ position:absolute; top:0; left:0; width:100%; max-width:100%; box-shadow:none; margin:0; }
+    .overlay{ position:static; background:none; padding:0; }
+    .batch-sheet-print .modal-actions{ display:none; }
+  }
 </style>
 </head>
 <body>
@@ -1603,6 +1612,30 @@ async function loadAll(){
   if(!Array.isArray(state.complaintPriorities) || state.complaintPriorities.length===0){
     state.complaintPriorities = [...DEFAULT_COMPLAINT_PRIORITIES];
     kvSet('complaintPriorities', state.complaintPriorities).catch(e=>console.error('seed complaintPriorities failed', e));
+  }
+  if(!Array.isArray(state.recipes)) state.recipes = [];
+  if(!state.recipes.some(r=>r.name==='Body Lotion - Hotel Range')){
+    const mat = (name, percent) => ({id:uid('MAT'), name, percent});
+    state.recipes.unshift({
+      id: uid('RCP'), name: 'Body Lotion - Hotel Range', description: '',
+      batchSizeKg: 150, standardPH: '5.5 - 6.5',
+      combineNote: 'White Oil, Palm Oil, Stearic Acid, Cetyl Alcohol, Cetareth 20, GMS 40, BHT, EGDS',
+      materials: [
+        mat('DI water', 92.4), mat('Stearic Acid', 4), mat('Cetyl Alcohol', 0.4), mat('Cetareth 20', 0.5),
+        mat('Refined Glycerin 99.5% USP', 0.2), mat('GMS 40', 1), mat('BHT (Butylated Hydroxy Toluene)', 0.1),
+        mat('Di sodium EDTA', 0.1), mat('Phenoxyethanol', 0.5), mat('Fragrance', 0.5), mat('EGDS', 0.4),
+        mat('White oil', 0.8), mat('Carbomer 940', 0.2), mat('KOH', 0.3), mat('P. Oil', 0.5), mat('Citric Acid', 0.1)
+      ],
+      steps: [
+        {id:uid('STEP'), ingredient:'Carbomer + H2O', amount:'80kg', waitMinutes:0},
+        {id:uid('STEP'), ingredient:'Water + EDTA + Glycerin', amount:'5kg', waitMinutes:0},
+        {id:uid('STEP'), ingredient:'Oil pot — melt and combine the oil-phase materials', amount:'', waitMinutes:0},
+        {id:uid('STEP'), ingredient:'Water + KOH', amount:'5kg', waitMinutes:0},
+        {id:uid('STEP'), ingredient:'Citric Acid + H2O', amount:'500g', waitMinutes:0}
+      ],
+      createdAt: new Date().toISOString()
+    });
+    kvSet('recipes', state.recipes).catch(e=>console.error('seed Body Lotion recipe failed', e));
   }
   if(!Array.isArray(state.staff)) state.staff = [];
   {
@@ -5136,10 +5169,18 @@ function stopBatchTicker(){ if(state._batchTicker){ clearInterval(state._batchTi
 
 // ---- Recipe CRUD ----
 function newStepDraft(){ return {id:uid('STEP'), ingredient:'', amount:'', waitMinutes:0}; }
+function newMaterialDraft(){ return {id:uid('MAT'), name:'', percent:0}; }
+// Percentage-of-batch-weight formulation, e.g. { percent: 4 } on an 150kg batch needs 6kg.
+// This is how the factory's real batch sheets are written, so a recipe's raw materials scale to
+// any batch size instead of being locked to one fixed absolute weight.
+function recipeMaterialAmount(percent, batchSizeKg){ return (Number(percent)||0)/100 * (Number(batchSizeKg)||0); }
+function recipeMaterialsTotalPercent(materials){ return (materials||[]).reduce((sum,m)=>sum+(Number(m.percent)||0), 0); }
 function openRecipeModal(id){
   const r = id ? byId(state.recipes, id) : null;
-  state._recipeDraft = r ? {id:r.id, name:r.name, description:r.description||'', steps: r.steps.map(s=>({...s}))}
-                          : {id:null, name:'', description:'', steps:[newStepDraft()]};
+  state._recipeDraft = r
+    ? {id:r.id, name:r.name, description:r.description||'', batchSizeKg:r.batchSizeKg||'', standardPH:r.standardPH||'', combineNote:r.combineNote||'',
+       materials: (r.materials||[]).map(m=>({...m})), steps: r.steps.map(s=>({...s}))}
+    : {id:null, name:'', description:'', batchSizeKg:'', standardPH:'', combineNote:'', materials:[newMaterialDraft()], steps:[newStepDraft()]};
   openModal('recipe:'+(id||'new'));
 }
 function draftAddStep(){ state._recipeDraft.steps.push(newStepDraft()); render(); }
@@ -5156,6 +5197,19 @@ function draftMoveStep(stepId, dir){
   [steps[i], steps[j]] = [steps[j], steps[i]];
   render();
 }
+function syncDraftTopFieldsFromDOM(){
+  // pull the recipe-level fields (outside the step/material lists) into the draft before any
+  // add/remove/reorder re-renders the form — otherwise those inputs reset to the draft's stale
+  // value and whatever was typed in Recipe name, Batch size, etc. gets silently wiped.
+  const d = state._recipeDraft;
+  const form = document.getElementById('form-recipe');
+  if(!form) return;
+  if(form.name) d.name = form.name.value;
+  if(form.description) d.description = form.description.value;
+  if(form.batchSizeKg) d.batchSizeKg = form.batchSizeKg.value;
+  if(form.standardPH) d.standardPH = form.standardPH.value;
+  if(form.combineNote) d.combineNote = form.combineNote.value;
+}
 function syncDraftStepFieldsFromDOM(){
   // pull current input values into the draft before add/remove/reorder/submit, so nothing typed is lost
   const steps = state._recipeDraft.steps;
@@ -5168,19 +5222,70 @@ function syncDraftStepFieldsFromDOM(){
     if(wait) s.waitMinutes = parseFloat(wait.value)||0;
   });
 }
+function draftAddMaterial(){ state._recipeDraft.materials.push(newMaterialDraft()); render(); }
+function draftRemoveMaterial(matId){
+  if(state._recipeDraft.materials.length<=1) return;
+  state._recipeDraft.materials = state._recipeDraft.materials.filter(m=>m.id!==matId);
+  render();
+}
+function draftMoveMaterial(matId, dir){
+  const materials = state._recipeDraft.materials;
+  const i = materials.findIndex(m=>m.id===matId);
+  const j = i+dir;
+  if(j<0 || j>=materials.length) return;
+  [materials[i], materials[j]] = [materials[j], materials[i]];
+  render();
+}
+function syncDraftMaterialFieldsFromDOM(){
+  const materials = state._recipeDraft.materials;
+  materials.forEach(m=>{
+    const name = document.getElementById('mat-name-'+m.id);
+    const pct = document.getElementById('mat-pct-'+m.id);
+    if(name) m.name = name.value;
+    if(pct) m.percent = parseFloat(pct.value)||0;
+  });
+}
+// Live-updates one material row's calculated amount, and the running total%, as you type —
+// without a full render() (which would drop focus mid-keystroke).
+function updateMaterialAmountPreview(matId){
+  syncDraftMaterialFieldsFromDOM();
+  updateAllMaterialAmountPreviews();
+}
+function updateAllMaterialAmountPreviews(){
+  const batchSizeKgEl = document.querySelector('[name=batchSizeKg]');
+  const batchSizeKg = parseFloat(batchSizeKgEl && batchSizeKgEl.value)||0;
+  (state._recipeDraft.materials||[]).forEach(m=>{
+    const amtEl = document.getElementById('mat-amt-'+m.id);
+    if(amtEl) amtEl.textContent = recipeMaterialAmount(m.percent, batchSizeKg).toFixed(3);
+  });
+  const totalEl = document.getElementById('mat-total-pct');
+  if(totalEl) totalEl.textContent = recipeMaterialsTotalPercent(state._recipeDraft.materials).toFixed(3)+'%';
+}
 async function submitRecipe(e){
   e.preventDefault();
   const f = e.target;
   syncDraftStepFieldsFromDOM();
+  syncDraftMaterialFieldsFromDOM();
   const steps = state._recipeDraft.steps
     .map(s=>({id:s.id, ingredient:(s.ingredient||'').trim(), amount:(s.amount||'').trim(), waitMinutes: Math.max(0, s.waitMinutes||0)}))
     .filter(s=>s.ingredient);
+  const materials = state._recipeDraft.materials
+    .map(m=>({id:m.id, name:(m.name||'').trim(), percent: Math.max(0, Number(m.percent)||0)}))
+    .filter(m=>m.name);
   if(!f.name.value.trim() || steps.length===0){ showToast('Add a name and at least one step'); return; }
+  const fields = {
+    name: f.name.value.trim(),
+    description: f.description.value.trim(),
+    batchSizeKg: Math.max(0, parseFloat(f.batchSizeKg.value)||0),
+    standardPH: f.standardPH.value.trim(),
+    combineNote: f.combineNote.value.trim(),
+    materials, steps
+  };
   if(state._recipeDraft.id){
     const r = byId(state.recipes, state._recipeDraft.id);
-    Object.assign(r, {name:f.name.value.trim(), description:f.description.value.trim(), steps});
+    Object.assign(r, fields);
   }else{
-    state.recipes.unshift({id:uid('RCP'), name:f.name.value.trim(), description:f.description.value.trim(), steps, createdAt:new Date().toISOString()});
+    state.recipes.unshift({id:uid('RCP'), ...fields, createdAt:new Date().toISOString()});
   }
   await save('recipes'); state._recipeDraft = null; closeModal();
   showToast('Recipe saved');
@@ -5303,13 +5408,17 @@ function renderRecipesPage(){
   <div class="recipe-grid">
     ${state.recipes.map(r=>{
       const totalMin = r.steps.reduce((sum,s)=>sum+(s.waitMinutes||0),0);
+      const matCount = (r.materials||[]).length;
+      const totalPct = recipeMaterialsTotalPercent(r.materials);
       return `
       <div class="recipe-card">
         <div class="rc-title">${esc(r.name)}</div>
         ${r.description ? `<div class="rc-meta">${esc(r.description)}</div>` : ''}
-        <div class="rc-meta">${r.steps.length} step${r.steps.length===1?'':'s'} · ~${totalMin} min total</div>
+        ${matCount ? `<div class="rc-meta">${matCount} raw material${matCount===1?'':'s'} · ${totalPct.toFixed(1)}%${r.batchSizeKg?(' · ref. '+r.batchSizeKg+'kg batch'):''}</div>` : ''}
+        <div class="rc-meta">${r.steps.length} step${r.steps.length===1?'':'s'} · ~${totalMin} min total${r.standardPH?(' · pH '+esc(r.standardPH)):''}</div>
         <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
           ${canManageBlendBoard() ? `<button class="btn btn-primary btn-sm" data-start-batch="${r.id}" ${state.activeBatch?'disabled':''}>${state.activeBatch?'Batch running':'Start batch'}</button>` : ''}
+          ${matCount ? `<button class="btn btn-sm" data-view-batchsheet="${r.id}">📋 Batch sheet</button>` : ''}
           ${isAdmin() ? `<button class="btn btn-sm" data-edit-recipe="${r.id}">Edit</button>` : ''}
           ${isAdmin() ? `<button class="btn btn-sm btn-danger" data-delete-recipe="${r.id}">Delete</button>` : ''}
         </div>
@@ -5416,23 +5525,55 @@ function startBatchModal(recipeId){
 }
 function recipeFormModal(){
   const d = state._recipeDraft;
+  const totalPct = recipeMaterialsTotalPercent(d.materials);
   return `
   <div class="overlay" id="overlay">
-    <div class="modal" style="max-width:620px;">
+    <div class="modal" style="max-width:720px;">
       <h2>${d.id?'Edit recipe':'New recipe'}</h2>
-      <div class="sub">Lay out each ingredient in order, with how long to wait before the next one.</div>
+      <div class="sub">The full batch sheet — raw material formulation, then the mixing steps.</div>
       <form id="form-recipe">
-        <div class="field"><label>Recipe name</label><input name="name" required value="${esc(d.name)}" placeholder="e.g. Shampoo Batch 250kg"></div>
+        <div class="field-row">
+          <div class="field"><label>Recipe / product name</label><input name="name" required value="${esc(d.name)}" placeholder="e.g. Body Lotion - Hotel Range"></div>
+          <div class="field"><label>Reference batch size (kg)</label><input name="batchSizeKg" type="number" min="0" step="0.1" value="${d.batchSizeKg}" placeholder="e.g. 150" oninput="updateAllMaterialAmountPreviews()"></div>
+        </div>
         <div class="field"><label>Description (optional)</label><input name="description" value="${esc(d.description)}" placeholder="Notes for the blending team"></div>
 
-        <div class="hint" style="font-weight:600;color:var(--ink);margin:14px 0 8px;">Steps</div>
+        <div class="hint" style="font-weight:600;color:var(--ink);margin:14px 0 4px;">Raw materials (% of batch weight)</div>
+        <div class="hint" style="margin-bottom:8px;">Percentages scale to whatever batch size is entered when printing the sheet or starting a batch.</div>
+        <div id="material-editor-list">
+          ${d.materials.map((m,i)=>{
+            const amt = recipeMaterialAmount(m.percent, d.batchSizeKg);
+            return `
+          <div class="step-editor-row">
+            <span class="se-num">${i+1}</span>
+            <div class="se-fields" style="grid-template-columns:2fr 1fr 1fr;">
+              <input id="mat-name-${m.id}" value="${esc(m.name)}" placeholder="Raw material — e.g. DI water">
+              <input id="mat-pct-${m.id}" type="number" min="0" step="0.001" value="${m.percent}" placeholder="Percentage" oninput="updateMaterialAmountPreview('${m.id}')">
+              <div class="hint" id="mat-amt-${m.id}" style="align-self:center;">${amt.toFixed(3)}</div>
+            </div>
+            <div class="se-actions">
+              <button type="button" data-mat-up="${m.id}" title="Move up">↑</button>
+              <button type="button" data-mat-down="${m.id}" title="Move down">↓</button>
+              <button type="button" data-mat-remove="${m.id}" title="Remove">✕</button>
+            </div>
+          </div>`;}).join('')}
+        </div>
+        <button type="button" class="btn btn-sm" id="btn-add-material" style="margin-bottom:6px;">+ Add raw material</button>
+        <div class="hint" style="margin-bottom:16px;">Total: <strong style="color:var(--ink);" id="mat-total-pct">${totalPct.toFixed(3)}%</strong></div>
+
+        <div class="field-row">
+          <div class="field"><label>Standard finished product pH (optional)</label><input name="standardPH" value="${esc(d.standardPH)}" placeholder="e.g. 5.5 - 6.5"></div>
+        </div>
+        <div class="field"><label>Combine together (optional)</label><textarea name="combineNote" placeholder="e.g. White Oil, Palm Oil, Stearic Acid, Cetyl Alcohol, Cetareth 20, GMS 40, BHT, EGDS" style="min-height:60px;">${esc(d.combineNote)}</textarea></div>
+
+        <div class="hint" style="font-weight:600;color:var(--ink);margin:14px 0 8px;">Mixing steps</div>
         <div id="step-editor-list">
           ${d.steps.map((s,i)=>`
           <div class="step-editor-row">
             <span class="se-num">${i+1}</span>
             <div class="se-fields">
-              <input id="step-ing-${s.id}" value="${esc(s.ingredient)}" placeholder="Ingredient / instruction — e.g. Add water">
-              <input id="step-amt-${s.id}" value="${esc(s.amount)}" placeholder="Amount — e.g. 75kg">
+              <input id="step-ing-${s.id}" value="${esc(s.ingredient)}" placeholder="Instruction — e.g. Carbomer + H2O">
+              <input id="step-amt-${s.id}" value="${esc(s.amount)}" placeholder="Amount — e.g. 80kg">
               <input id="step-wait-${s.id}" type="number" min="0" step="0.5" value="${s.waitMinutes}" placeholder="Wait (min)">
             </div>
             <div class="se-actions">
@@ -5449,6 +5590,62 @@ function recipeFormModal(){
           <button type="submit" class="btn btn-primary">${d.id?'Save changes':'Create recipe'}</button>
         </div>
       </form>
+    </div>
+  </div>`;
+}
+// Recalculates every raw material's amount + the totals row as the batch size input changes,
+// without a full render() (keeps the input focused mid-keystroke).
+function updateBatchSheetAmounts(recipeId){
+  const r = byId(state.recipes, recipeId); if(!r) return;
+  const sizeEl = document.getElementById('sheet-batch-size');
+  const batchSizeKg = parseFloat(sizeEl && sizeEl.value)||0;
+  let totalAmt = 0;
+  (r.materials||[]).forEach(m=>{
+    const amt = recipeMaterialAmount(m.percent, batchSizeKg);
+    totalAmt += amt;
+    const cell = document.querySelector('.sheet-amt[data-mat-id="'+m.id+'"]');
+    if(cell) cell.textContent = amt.toFixed(3);
+  });
+  const totalAmtEl = document.getElementById('sheet-total-amt');
+  if(totalAmtEl) totalAmtEl.textContent = totalAmt.toFixed(3);
+}
+function recipeBatchSheetModal(recipeId){
+  const r = byId(state.recipes, recipeId); if(!r) return '';
+  const batchSizeKg = r.batchSizeKg || 0;
+  const totalPct = recipeMaterialsTotalPercent(r.materials);
+  const totalAmt = recipeMaterialAmount(totalPct, batchSizeKg);
+  return `
+  <div class="overlay" id="overlay">
+    <div class="modal batch-sheet-print" style="max-width:680px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+        <div><div class="hint">Date</div><div style="font-weight:600;">${fmtDate(new Date().toISOString())}</div></div>
+        <div><div class="hint">Batch number</div><input id="sheet-batch-no" value="${esc(uid('BLD'))}" style="font-weight:600;border:1px solid var(--border);border-radius:6px;padding:4px 8px;width:150px;text-align:right;"></div>
+      </div>
+      <h2 style="text-align:center;margin:6px 0 2px;text-transform:uppercase;">${esc(r.name)}</h2>
+      ${r.description ? `<div class="hint" style="text-align:center;margin-bottom:10px;">${esc(r.description)}</div>` : ''}
+      <div class="field" style="max-width:220px;margin:0 auto 14px;">
+        <label style="text-align:center;display:block;">Batch size (kg)</label>
+        <input id="sheet-batch-size" type="number" min="0" step="0.1" value="${batchSizeKg}" style="text-align:center;" oninput="updateBatchSheetAmounts('${r.id}')">
+      </div>
+      <table class="data-table">
+        <thead><tr><th>No</th><th>Raw material</th><th>Percentage</th><th>Amount needed</th></tr></thead>
+        <tbody>
+          ${r.materials.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(m.name)}</td><td>${m.percent.toFixed(3)}</td><td class="sheet-amt" data-mat-id="${m.id}">${recipeMaterialAmount(m.percent, batchSizeKg).toFixed(3)}</td></tr>`).join('')}
+          <tr style="font-weight:700;"><td></td><td>Total</td><td>${totalPct.toFixed(3)}</td><td id="sheet-total-amt">${totalAmt.toFixed(3)}</td></tr>
+        </tbody>
+      </table>
+      ${r.steps.length ? `
+      <div class="hint" style="font-weight:600;color:var(--ink);margin:16px 0 8px;">Mixing steps</div>
+      <ol style="margin:0 0 14px;padding-left:20px;">
+        ${r.steps.map(s=>`<li style="margin-bottom:4px;">${esc(s.ingredient)}${s.amount?' — '+esc(s.amount):''}${s.waitMinutes>0?' ('+s.waitMinutes+' min)':''}</li>`).join('')}
+      </ol>` : ''}
+      ${r.combineNote ? `<div class="hint" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;"><strong style="color:var(--ink);">Combine together:</strong> ${esc(r.combineNote)}</div>` : ''}
+      ${r.standardPH ? `<div class="hint" style="text-align:center;margin-bottom:10px;">Standard finished product pH ${esc(r.standardPH)}</div>` : ''}
+      <div class="hint" style="text-align:center;">Audrey Care (Pvt) Ltd.</div>
+      <div class="modal-actions" style="justify-content:center;margin-top:16px;">
+        <button type="button" class="btn" id="btn-cancel-modal">Close</button>
+        <button type="button" class="btn btn-primary" id="btn-print-batchsheet">🖨 Print</button>
+      </div>
     </div>
   </div>`;
 }
@@ -5539,6 +5736,7 @@ function renderModal(){
   if(type==='staff') return staffFormModal(id==='new'?null:id);
   if(type==='template') return templateFormModal();
   if(type==='recipe') return recipeFormModal();
+  if(type==='recipesheet') return recipeBatchSheetModal(parts.slice(1).join(':'));
   if(type==='startbatch') return startBatchModal(id);
   if(type==='citypak') return citypakTagModal(parts.slice(1).join(':'));
   if(type==='deliveryoutcome') return deliveryOutcomeModal(parts.slice(1).join(':'));
@@ -6778,12 +6976,18 @@ function attachShellHandlers(){
   document.querySelectorAll('[data-edit-recipe]').forEach(b=>b.addEventListener('click', ()=>openRecipeModal(b.dataset.editRecipe)));
   document.querySelectorAll('[data-delete-recipe]').forEach(b=>b.addEventListener('click', ()=>deleteRecipe(b.dataset.deleteRecipe)));
   document.querySelectorAll('[data-start-batch]').forEach(b=>b.addEventListener('click', ()=>openModal('startbatch:'+b.dataset.startBatch)));
+  document.querySelectorAll('[data-view-batchsheet]').forEach(b=>b.addEventListener('click', ()=>openModal('recipesheet:'+b.dataset.viewBatchsheet)));
+  if(byIdEl('btn-print-batchsheet')) byIdEl('btn-print-batchsheet').onclick = ()=>window.print();
   if(byIdEl('form-start-batch')) byIdEl('form-start-batch').addEventListener('submit', submitStartBatch);
   if(byIdEl('form-recipe')) byIdEl('form-recipe').addEventListener('submit', submitRecipe);
-  if(byIdEl('btn-add-step')) byIdEl('btn-add-step').onclick = ()=>{ syncDraftStepFieldsFromDOM(); draftAddStep(); };
-  document.querySelectorAll('[data-step-up]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftStepFieldsFromDOM(); draftMoveStep(b.dataset.stepUp, -1); }));
-  document.querySelectorAll('[data-step-down]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftStepFieldsFromDOM(); draftMoveStep(b.dataset.stepDown, 1); }));
-  document.querySelectorAll('[data-step-remove]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftStepFieldsFromDOM(); draftRemoveStep(b.dataset.stepRemove); }));
+  if(byIdEl('btn-add-step')) byIdEl('btn-add-step').onclick = ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftAddStep(); };
+  document.querySelectorAll('[data-step-up]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftMoveStep(b.dataset.stepUp, -1); }));
+  document.querySelectorAll('[data-step-down]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftMoveStep(b.dataset.stepDown, 1); }));
+  document.querySelectorAll('[data-step-remove]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftRemoveStep(b.dataset.stepRemove); }));
+  if(byIdEl('btn-add-material')) byIdEl('btn-add-material').onclick = ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftAddMaterial(); };
+  document.querySelectorAll('[data-mat-up]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftMoveMaterial(b.dataset.matUp, -1); }));
+  document.querySelectorAll('[data-mat-down]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftMoveMaterial(b.dataset.matDown, 1); }));
+  document.querySelectorAll('[data-mat-remove]').forEach(b=>b.addEventListener('click', ()=>{ syncDraftTopFieldsFromDOM(); syncDraftStepFieldsFromDOM(); syncDraftMaterialFieldsFromDOM(); draftRemoveMaterial(b.dataset.matRemove); }));
   if(byIdEl('btn-batch-pause')) byIdEl('btn-batch-pause').onclick = pauseBatch;
   if(byIdEl('btn-batch-resume')) byIdEl('btn-batch-resume').onclick = resumeBatch;
   if(byIdEl('btn-batch-restart')) byIdEl('btn-batch-restart').onclick = restartCurrentStep;
