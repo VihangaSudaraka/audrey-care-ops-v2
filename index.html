@@ -321,6 +321,12 @@
   /* ---------------- Overlay / Modal ---------------- */
   @keyframes overlay-fade{from{opacity:0;}to{opacity:1;}}
   @keyframes modal-pop{from{opacity:0;transform:scale(.94) translateY(10px);}to{opacity:1;transform:scale(1) translateY(0);}}
+  /* state.modal stays the same string across every re-render while a drawer/modal is open — typing,
+     a dropdown change, a background save, all call render(). Without this, the whole panel gets
+     torn down and rebuilt each time and its entrance animation replays, looking like it pops up
+     again on every edit. .reopen-noanim wraps the panel on any re-render that isn't a fresh open. */
+  .reopen-noanim .overlay, .reopen-noanim .modal, .reopen-noanim .drawer, .reopen-noanim .drawer-overlay,
+  .reopen-noanim .admin-broadcast-overlay, .reopen-noanim .admin-broadcast-panel{ animation: none !important; }
   .overlay{position:fixed;inset:0;background:rgba(20,25,20,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;overflow-y:auto;animation:overlay-fade .18s ease;}
   .modal{background:#fff;border-radius:12px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;padding:24px;margin:auto;animation:modal-pop .22s cubic-bezier(.16,.84,.44,1);}
   .admin-broadcast-overlay{position:fixed;inset:0;background:rgba(15,30,20,.65);display:flex;align-items:center;justify-content:center;z-index:600;padding:20px;animation:toast-in .2s ease;}
@@ -2875,6 +2881,13 @@ function restoreFocusedInput(snapshot){
 // fade+slide in on an actual navigation — not on every re-render a keystroke or realtime
 // update triggers while staying on the same page.
 let _lastEnterPage = null;
+// Same idea for the order/blend/etc. drawer and the admin broadcast panel: state.modal stays the
+// same string (e.g. 'order:XYZ') across every re-render that happens WHILE it's open — typing in
+// a field, changing a dropdown, a background save, a realtime update, all call render() — so
+// without this, the modal's pop-in animation replayed on every single one of those, looking like
+// the panel kept popping up again ("double show") every time something was edited or saved.
+let _lastOpenModal = null;
+let _lastAdminBroadcastId = null;
 function render(){
   const focusSnapshot = captureFocusedInput();
   renderInner();
@@ -3396,6 +3409,11 @@ function renderShell(freshPage){
   const navGroups = navGroupsFor(allowed);
   const justLoggedIn = !!state._justLoggedIn;
   state._justLoggedIn = false;
+  const freshModal = state.modal !== _lastOpenModal;
+  _lastOpenModal = state.modal;
+  const broadcastId = state.adminBroadcast ? state.adminBroadcast.id : null;
+  const freshBroadcast = broadcastId !== _lastAdminBroadcastId;
+  _lastAdminBroadcastId = broadcastId;
   return `
   <div class="shell ${justLoggedIn?'shell-enter':''}">
     <aside class="sidebar ${state.sidebarOpen?'open':''}">
@@ -3461,12 +3479,12 @@ function renderShell(freshPage){
     <span class="clock-label">Time :</span> <span class="clock-value" id="live-clock-time">${formatClockTime(new Date())}</span>
     <span class="clock-label">Version 4.0</span>
   </div>
-  ${state.modal ? renderModal() : ''}
+  ${state.modal ? `<div class="${freshModal?'':'reopen-noanim'}">${renderModal()}</div>` : ''}
   ${state.toast ? renderToast() : ''}
   ${state.chatNotice ? renderChatNotice() : ''}
   ${state.complaintNotice ? renderComplaintNotice() : ''}
   ${(state.batchFocusMode && state.activeBatch) ? renderBatchFocusOverlay() : ''}
-  ${state.adminBroadcast ? renderAdminBroadcastPanel() : ''}
+  ${state.adminBroadcast ? `<div class="${freshBroadcast?'':'reopen-noanim'}">${renderAdminBroadcastPanel()}</div>` : ''}
   `;
 }
 function renderChatNotice(){
