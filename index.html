@@ -2756,11 +2756,58 @@ function askAiSuggestion(text){
 }
 
 /* ===================== Render root ===================== */
+// render() tears the whole page down and rebuilds it from `state` on every call — including
+// when a realtime update from someone ELSE's login comes in while you're mid-typing into a
+// field that hasn't been saved yet (a new customer's name, a chat draft, a search box...).
+// That field isn't in `state` at all yet, so the rebuild would silently wipe out whatever
+// you'd typed and drop your cursor focus. Capture it beforehand and put it straight back
+// afterward so a background update from another session never costs you unsaved typing.
+function captureFocusedInput(){
+  const el = document.activeElement;
+  if(!el) return null;
+  const tag = el.tagName;
+  if(tag!=='INPUT' && tag!=='TEXTAREA' && tag!=='SELECT') return null;
+  // Most form fields in this app are identified by a `name` (read via FormData at submit time)
+  // rather than an `id` — scope by the enclosing form's id too so the same field name reused
+  // across different forms/modals doesn't get cross-matched.
+  let selector = null;
+  if(el.id){
+    selector = '#'+CSS.escape(el.id);
+  } else if(el.name){
+    const form = el.closest('form');
+    selector = (form && form.id ? '#'+CSS.escape(form.id)+' ' : '') + '[name="'+CSS.escape(el.name)+'"]';
+  }
+  if(!selector) return null;
+  const snapshot = {selector, value: el.value};
+  if(typeof el.selectionStart==='number'){
+    snapshot.selectionStart = el.selectionStart;
+    snapshot.selectionEnd = el.selectionEnd;
+  }
+  return snapshot;
+}
+function restoreFocusedInput(snapshot){
+  if(!snapshot) return;
+  let el;
+  try{ el = document.querySelector(snapshot.selector); }catch(e){ return; }
+  if(!el) return;
+  const tag = el.tagName;
+  if(tag!=='INPUT' && tag!=='TEXTAREA' && tag!=='SELECT') return;
+  el.value = snapshot.value;
+  el.focus();
+  if(typeof snapshot.selectionStart==='number' && typeof el.setSelectionRange==='function'){
+    try{ el.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd); }catch(e){}
+  }
+}
 // Tracks which page last had its entrance animation played, so cards/stat boxes only
 // fade+slide in on an actual navigation — not on every re-render a keystroke or realtime
 // update triggers while staying on the same page.
 let _lastEnterPage = null;
 function render(){
+  const focusSnapshot = captureFocusedInput();
+  renderInner();
+  restoreFocusedInput(focusSnapshot);
+}
+function renderInner(){
   const app = document.getElementById('app');
   if(!state.loaded){ app.innerHTML = `<div class="center-screen"><div class="hint">Loading Audrey Care operations…</div></div>`; return; }
   if(state.backendMissing){ app.innerHTML = renderBackendSetupScreen(); return; }
