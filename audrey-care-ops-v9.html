@@ -2969,6 +2969,20 @@ function renderRatingBlock(o){
       <div style="text-align:center;font-size:26px;letter-spacing:4px;color:#D4A017;">${'★'.repeat(o.customerRating)}${'☆'.repeat(5-o.customerRating)}</div>
     </div>`;
   }
+  const draft = state._ratingFeedbackDraft;
+  if(draft && draft.orderId===o.id){
+    return `<div class="field" style="margin:16px 0 0;">
+      <label style="text-align:center;display:block;">Rate us</label>
+      <div style="text-align:center;font-size:30px;letter-spacing:6px;color:#D4A017;">${'★'.repeat(draft.value)}${'☆'.repeat(5-draft.value)}</div>
+      <form id="form-rating-feedback">
+        <textarea name="feedback" placeholder="What went wrong? (optional)" style="min-height:70px;margin-top:8px;"></textarea>
+        <div style="display:flex;justify-content:center;gap:10px;margin-top:8px;">
+          <button type="button" class="btn btn-sm" id="btn-rating-feedback-back">← Choose again</button>
+          <button type="submit" class="btn btn-primary btn-sm">Submit</button>
+        </div>
+      </form>
+    </div>`;
+  }
   return `<div class="field" style="margin:16px 0 0;">
     <label style="text-align:center;display:block;">Rate us</label>
     <div class="rate-stars" data-order-id="${o.id}" style="text-align:center;font-size:30px;letter-spacing:6px;color:#D4A017;">
@@ -2976,11 +2990,12 @@ function renderRatingBlock(o){
     </div>
   </div>`;
 }
-async function submitCustomerRating(orderId, value){
+async function submitCustomerRating(orderId, value, feedback){
   const o = byId(state.orders, orderId);
   if(!o || o.customerRating) return;
   o.customerRating = value;
   o.customerRatingAt = new Date().toISOString();
+  if(feedback) o.customerRatingFeedback = feedback;
   await save('orders');
   render();
 }
@@ -2995,10 +3010,23 @@ function attachTrackHandlers(){
     const stars = [...wrap.querySelectorAll('.rate-star')];
     stars.forEach((star, idx)=>{
       star.addEventListener('mouseenter', ()=>{ stars.forEach((s,i)=>{ s.textContent = i<=idx ? '★' : '☆'; }); });
-      star.addEventListener('click', ()=> submitCustomerRating(wrap.dataset.orderId, idx+1));
+      star.addEventListener('click', ()=>{
+        const value = idx+1;
+        if(value<=3){ state._ratingFeedbackDraft = {orderId: wrap.dataset.orderId, value}; render(); }
+        else submitCustomerRating(wrap.dataset.orderId, value);
+      });
     });
     wrap.addEventListener('mouseleave', ()=>{ stars.forEach(s=>{ s.textContent='☆'; }); });
   });
+  if(el('form-rating-feedback')) el('form-rating-feedback').addEventListener('submit', e=>{
+    e.preventDefault();
+    const draft = state._ratingFeedbackDraft;
+    if(!draft) return;
+    const feedback = (e.target.feedback.value||'').trim();
+    state._ratingFeedbackDraft = null;
+    submitCustomerRating(draft.orderId, draft.value, feedback);
+  });
+  if(el('btn-rating-feedback-back')) el('btn-rating-feedback-back').addEventListener('click', ()=>{ state._ratingFeedbackDraft = null; render(); });
 }
 
 /* ===================== Customer complaint form ===================== */
@@ -4582,7 +4610,7 @@ function renderRatingsPage(){
   <div class="panel">
     ${rated.length===0 ? `<div class="empty-state">No ratings yet — they'll show up here once customers rate their delivery on the track order page.</div>` : `
     <table class="data-table">
-      <thead><tr><th>Customer name</th><th>Phone number</th><th>Order number</th><th>Rating</th></tr></thead>
+      <thead><tr><th>Customer name</th><th>Phone number</th><th>Order number</th><th>Rating</th><th>Feedback</th></tr></thead>
       <tbody>
         ${rated.map(o=>`
         <tr>
@@ -4590,6 +4618,7 @@ function renderRatingsPage(){
           <td>${esc(o.phone)||'—'}</td>
           <td>${esc(o.orderNumber||o.id)}</td>
           <td>${'★'.repeat(o.customerRating)}${'☆'.repeat(5-o.customerRating)}</td>
+          <td>${o.customerRatingFeedback ? esc(o.customerRatingFeedback) : '—'}</td>
         </tr>`).join('')}
       </tbody>
     </table>`}
