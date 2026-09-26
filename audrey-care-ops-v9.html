@@ -1105,7 +1105,7 @@ const DEFAULT_AUTH = {
 const ROLES = ['Admin','Sub Admin','Blending','Packing','Customer Care','Orders Process'];
 const ASSIGNEE_TEAMS = ['Packing','Blending'];
 const ROLE_PAGES = {
-  Admin: ['dashboard','orders','orderinquiry','blending','recipes','customers','suppliers','complaints','gmp','staff','chat','bulksms','settings'],
+  Admin: ['dashboard','orders','orderinquiry','blending','recipes','customers','suppliers','complaints','gmp','staff','chat','bulksms','ratings','settings'],
   'Sub Admin': ['orders','blending','customers','complaints'],
   Blending: ['blending','chat','recipes'],
   Packing: ['orders','chat'],
@@ -1471,7 +1471,8 @@ const ICONS = {
   bot:'<rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1.3" fill="currentColor" stroke="none"/><path d="M9 17.5h6"/><path d="M2 12v3"/><path d="M22 12v3"/>',
   send:'<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>',
   chevron:'<path d="M9 6l6 6-6 6"/>',
-  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>'
+  search:'<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
+  star:'<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z"/>'
 };
 function icon(name){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`; }
 const TRACK_STAGE_PATHS = [
@@ -2956,11 +2957,34 @@ function renderTrackResult(o){
     ${stage>=STAGES.length-1 ? 'Picked up by delivery — thank you!' : `Currently: <strong style="color:var(--ink);">${STAGES[stage]}</strong>`}
   </div>
   ${o.courierService && stage>=3 ? `<div class="hint" style="text-align:center;margin-top:6px;">Courier: ${esc(o.courierService)}${o.courierNumber?(' · '+esc(o.courierNumber)):''}</div>` : ''}
+  ${stage>=3 ? renderRatingBlock(o) : ''}
   ${o.courierService==='CityPak' && o.courierNumber && stage>=3 ? renderCitypakTrackingBlock(o.courierNumber) : ''}
   <div style="text-align:center;margin-top:16px;">
     <a href="tel:0117114040" class="btn btn-sm" style="text-decoration:none;display:inline-block;">Hotline: 011 711 4040</a>
   </div>
   `;
+}
+function renderRatingBlock(o){
+  if(o.customerRating){
+    return `<div class="field" style="margin:16px 0 0;">
+      <label style="text-align:center;display:block;">Thanks for rating us!</label>
+      <div style="text-align:center;font-size:26px;letter-spacing:4px;color:#D4A017;">${'★'.repeat(o.customerRating)}${'☆'.repeat(5-o.customerRating)}</div>
+    </div>`;
+  }
+  return `<div class="field" style="margin:16px 0 0;">
+    <label style="text-align:center;display:block;">Rate us</label>
+    <div class="rate-stars" data-order-id="${o.id}" style="text-align:center;font-size:30px;letter-spacing:6px;color:#D4A017;">
+      ${[1,2,3,4,5].map(n=>`<span class="rate-star" data-rate-value="${n}" style="cursor:pointer;">☆</span>`).join('')}
+    </div>
+  </div>`;
+}
+async function submitCustomerRating(orderId, value){
+  const o = byId(state.orders, orderId);
+  if(!o || o.customerRating) return;
+  o.customerRating = value;
+  o.customerRatingAt = new Date().toISOString();
+  await save('orders');
+  render();
 }
 function attachTrackHandlers(){
   const el = id=>document.getElementById(id);
@@ -2969,6 +2993,14 @@ function attachTrackHandlers(){
   if(o && o.courierService==='CityPak' && o.courierNumber && o.stage>=3 && CITYPAK_CONFIGURED){
     ensureCitypakTracking(o.courierNumber);
   }
+  document.querySelectorAll('.rate-stars').forEach(wrap=>{
+    const stars = [...wrap.querySelectorAll('.rate-star')];
+    stars.forEach((star, idx)=>{
+      star.addEventListener('mouseenter', ()=>{ stars.forEach((s,i)=>{ s.textContent = i<=idx ? '★' : '☆'; }); });
+      star.addEventListener('click', ()=> submitCustomerRating(wrap.dataset.orderId, idx+1));
+    });
+    wrap.addEventListener('mouseleave', ()=>{ stars.forEach(s=>{ s.textContent='☆'; }); });
+  });
 }
 
 /* ===================== Customer complaint form ===================== */
@@ -3257,6 +3289,7 @@ const NAV = [
   ]},
   {group:'Other', items:[
     {id:'bulksms', label:'Bulk SMS', icon:'send'},
+    {id:'ratings', label:'Customer ratings', icon:'star'},
     {id:'settings', label:'Settings', icon:'settings'},
   ]},
 ];
@@ -3319,6 +3352,7 @@ const PAGE_META = {
   staff:{title:'Staff', sub:'People working across the pipeline.'},
   chat:{title:'Team chat', sub:'Message everyone signed in to the workspace.'},
   bulksms:{title:'Bulk SMS', sub:'Send one message to a list of customers at once.'},
+  ratings:{title:'Customer ratings', sub:'What customers said about their delivery experience.'},
   settings:{title:'Settings', sub:'Workspace access, and task templates.'},
 };
 
@@ -3464,6 +3498,7 @@ function renderPage(){
     case 'staff': return renderStaffPage();
     case 'chat': return renderChatPage();
     case 'bulksms': return renderBulkSmsPage();
+    case 'ratings': return renderRatingsPage();
     case 'settings': return renderSettingsPage();
     default: return '';
   }
@@ -4536,6 +4571,32 @@ function manageBulkSmsTemplatesModal(){
       </div>
     </div>
   </div>`;
+}
+/* ===================== Customer ratings page ===================== */
+function renderRatingsPage(){
+  const rated = state.orders.filter(o=>o.customerRating).slice().sort((a,b)=>new Date(b.customerRatingAt||0)-new Date(a.customerRatingAt||0));
+  const avg = rated.length ? (rated.reduce((sum,o)=>sum+o.customerRating,0)/rated.length) : 0;
+  return `
+  <div class="stat-grid">
+    <div class="stat-card"><div class="label">Ratings received</div><div class="value">${rated.length}</div></div>
+    <div class="stat-card"><div class="label">Average rating</div><div class="value accent">${rated.length?avg.toFixed(1)+' ★':'—'}</div></div>
+  </div>
+  <div class="panel">
+    ${rated.length===0 ? `<div class="empty-state">No ratings yet — they'll show up here once customers rate their delivery on the track order page.</div>` : `
+    <table class="data-table">
+      <thead><tr><th>Customer name</th><th>Phone number</th><th>Order number</th><th>Rating</th></tr></thead>
+      <tbody>
+        ${rated.map(o=>`
+        <tr>
+          <td>${esc(o.customer)}</td>
+          <td>${esc(o.phone)||'—'}</td>
+          <td>${esc(o.orderNumber||o.id)}</td>
+          <td>${'★'.repeat(o.customerRating)}${'☆'.repeat(5-o.customerRating)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`}
+  </div>
+  `;
 }
 function renderSettingsPage(){
   return `
