@@ -649,7 +649,13 @@ async function kvGet(key){
   if(error){ console.error('kvGet '+key, error); return null; }
   return data ? data.value : null;
 }
+// Timestamp of the last time WE wrote each key, so the realtime handler can recognize its own
+// echo coming back even in the rare case the content-equality check below misses it (e.g. a
+// save() retry re-sends the same value with a new updated_at, or some other subtle mismatch) —
+// see the "recentlySavedByUs" guard where this is read.
+let _recentSaveAt = {};
 async function kvSet(key, value){
+  _recentSaveAt[key] = Date.now();
   const { error } = await supabaseClient.from('app_data').upsert({ key, value, updated_at: new Date().toISOString() });
   if(error){ console.error('kvSet '+key, error); return false; }
   return true;
@@ -927,17 +933,20 @@ function subscribeRealtime(){
       const k = row.key;
       // Supabase echoes our own writes back through this same subscription. Re-rendering on an
       // echo that didn't actually change anything tears down and rebuilds the whole shell for no
-      // reason — most visibly, it restarts the toast's pop-in animation, making it look like it
-      // flashed twice. Skip the no-op case; still applies (and renders) any value that differs,
-      // whether it's a genuine external change or our own edited value coming back.
+      // reason — most visibly, it restarts the toast's pop-in animation and every panel's
+      // entrance animation, making everything look like it popped up twice. Skip the no-op case
+      // via a content check, backed up by a short time-based cooldown for the rare case a save()
+      // retry (same value, new updated_at) or some other subtle round-trip mismatch slips past
+      // the content check — still applies (and renders) any value that genuinely differs.
+      const recentlySavedByUs = (key)=> (Date.now() - (_recentSaveAt[key]||0)) < 2500;
       if(k==='auth'){
         const incoming = payload.new ? payload.new.value : null;
-        if(stableStringify(state.auth)===stableStringify(incoming)) return;
+        if(stableStringify(state.auth)===stableStringify(incoming) || recentlySavedByUs(k)) return;
         state.auth = incoming; render(); return;
       }
       if(SYNCED_KEYS.includes(k)){
         const incoming = payload.new ? payload.new.value : (k==='activeBatch' ? null : (k==='branding' ? {addons:[]} : (k==='navOrder' ? {} : (k==='navLabels' ? {} : (k==='theme' ? {paletteId:'green'} : (k==='smsTemplates' ? {...DEFAULT_SMS_TEMPLATES} : (k==='orderSettings' ? {...DEFAULT_ORDER_SETTINGS} : [])))))));
-        if(stableStringify(state[k])===stableStringify(incoming)) return;
+        if(stableStringify(state[k])===stableStringify(incoming) || recentlySavedByUs(k)) return;
         const prevChatLen = (k==='chat' && Array.isArray(state.chat)) ? state.chat.length : null;
         const prevComplaintsById = (k==='complaints' && Array.isArray(state.complaints)) ? new Map(state.complaints.map(c=>[c.id,c])) : null;
         state[k] = incoming;
