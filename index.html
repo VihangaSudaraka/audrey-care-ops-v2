@@ -4836,28 +4836,6 @@ function renderSettingsPage(){
     </div>
   </div>` : ''}
 
-  ${isAdmin() ? `
-  <div class="panel">
-    <div class="panel-head"><h3>Login passwords</h3></div>
-    <div class="panel-body">
-      <div class="hint" style="margin-bottom:12px;">Sub Admin, Blending and Packing sign in with just the shared password below. Admin and Customer Care sign in by picking their name and entering their own password instead (manage those below, under "Team logins"), so the two fields marked "fallback" here only come into play if every named login for that role is removed. Orders Process has no password; it opens the public customer orders board directly.</div>
-      <form id="form-passwords">
-        <div class="field-row">
-          <div class="field"><label>Admin password <span class="hint">(fallback)</span></label><input name="adminPassword" value="${esc(state.auth.adminPassword)}"></div>
-          <div class="field"><label>Sub Admin password</label><input name="subAdminPassword" value="${esc(state.auth.subAdminPassword)}"></div>
-          <div class="field"><label>Blending password</label><input name="blendingPassword" value="${esc(state.auth.blendingPassword)}"></div>
-        </div>
-        <div class="field-row">
-          <div class="field"><label>Packing password</label><input name="packingPassword" value="${esc(state.auth.packingPassword)}"></div>
-          <div class="field"><label>Customer Care password <span class="hint">(fallback)</span></label><input name="customerCarePassword" value="${esc(state.auth.customerCarePassword)}"></div>
-        </div>
-        <div class="modal-actions" style="justify-content:flex-start;">
-          <button type="submit" class="btn btn-primary">Save passwords</button>
-        </div>
-      </form>
-    </div>
-  </div>` : ''}
-
   ${isAdmin() ? renderRoleLoginsPanel() : ''}
 
   ${isAdmin() ? renderRolePagesPanel() : ''}
@@ -7178,20 +7156,6 @@ function attachShellHandlers(){
   scrollAiChatToBottom();
 
   if(byIdEl('form-add-staff')) byIdEl('form-add-staff').addEventListener('submit', addStaffMember);
-  if(byIdEl('form-passwords')) byIdEl('form-passwords').addEventListener('submit', async (e)=>{
-    e.preventDefault();
-    const f = e.target;
-    state.auth = {
-      ...state.auth,
-      adminPassword: f.adminPassword.value.trim() || DEFAULT_AUTH.adminPassword,
-      subAdminPassword: f.subAdminPassword.value.trim() || DEFAULT_AUTH.subAdminPassword,
-      blendingPassword: f.blendingPassword.value.trim() || DEFAULT_AUTH.blendingPassword,
-      packingPassword: f.packingPassword.value.trim() || DEFAULT_AUTH.packingPassword,
-      customerCarePassword: f.customerCarePassword.value.trim() || DEFAULT_AUTH.customerCarePassword
-    };
-    await saveAuth();
-    showToast('Passwords updated');
-  });
 
   if(byIdEl('form-role-logins')) byIdEl('form-role-logins').addEventListener('submit', async (e)=>{
     e.preventDefault();
