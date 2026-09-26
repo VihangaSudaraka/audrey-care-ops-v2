@@ -3723,7 +3723,10 @@ function renderOrderInquiryPage(){
           <span class="lr-avatar empty">${initials(o.customer||'?')}</span>
           <span class="lr-name">${esc(o.customer)}</span>
         </span>
-        <span style="display:flex;gap:8px;">
+        <span style="display:flex;gap:8px;align-items:center;">
+          ${o.deliveryOutcome
+            ? `<span class="pill ${o.deliveryOutcome==='Delivered'?'pill-active':'pill-high'}" style="cursor:pointer;" data-open-delivery-outcome="${o.id}" onclick="event.stopPropagation()" title="Click to change">${o.deliveryOutcome}</span>`
+            : `<button type="button" class="btn btn-sm" data-open-delivery-outcome="${o.id}" onclick="event.stopPropagation()">Delivery status</button>`}
           <button type="button" class="btn btn-sm" data-review-fb="${o.id}" ${fbLocked?'disabled title="Already sent — only Admin can send it again."':''} onclick="event.stopPropagation()">${fbSent?'FB review sent ✓':'Send FB review link'}</button>
           <button type="button" class="btn btn-sm" data-review-google="${o.id}" ${googleLocked?'disabled title="Already sent — only Admin can send it again."':''} onclick="event.stopPropagation()">${googleSent?'Google review sent ✓':'Send Google review'}</button>
         </span>
@@ -5511,6 +5514,7 @@ function renderModal(){
   if(type==='recipe') return recipeFormModal();
   if(type==='startbatch') return startBatchModal(id);
   if(type==='citypak') return citypakTagModal(parts.slice(1).join(':'));
+  if(type==='deliveryoutcome') return deliveryOutcomeModal(parts.slice(1).join(':'));
   if(type==='smsconfirm') return smsConfirmModal();
   if(type==='brandaddon') return brandingPreviewModal(parts.slice(1).join(':'));
   if(type==='brandnew') return brandingAddAddonModal();
@@ -5661,6 +5665,31 @@ function citypakTagModal(id){
       </form>
     </div>
   </div>`;
+}
+function deliveryOutcomeModal(id){
+  const o = byId(state.orders, id); if(!o) return '';
+  return `
+  <div class="overlay" id="overlay">
+    <div class="modal" style="max-width:360px;text-align:center;">
+      <h2>Delivery outcome</h2>
+      <div class="sub">${esc(o.orderNumber||o.id)} · ${esc(o.customer)}</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px;">
+        <button type="button" class="btn btn-success" data-set-delivery-outcome="${o.id}:Delivered" style="padding:14px;font-size:15px;">✓ Delivered</button>
+        <button type="button" class="btn btn-danger" data-set-delivery-outcome="${o.id}:Returned" style="padding:14px;font-size:15px;">✗ Returned</button>
+      </div>
+      <div class="modal-actions" style="justify-content:center;margin-top:16px;">
+        <button type="button" class="btn" id="btn-cancel-modal">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+async function setDeliveryOutcome(orderId, outcome){
+  const o = byId(state.orders, orderId);
+  if(!o) return;
+  o.deliveryOutcome = outcome;
+  o.deliveryOutcomeAt = new Date().toISOString();
+  await save('orders');
+  closeModal();
 }
 
 function smsConfirmModal(){
@@ -6549,6 +6578,11 @@ function attachShellHandlers(){
   if(byIdEl('order-inquiry-search')) byIdEl('order-inquiry-search').addEventListener('input', e=>{ state.filters.orderInquirySearch = e.target.value; render(); });
   document.querySelectorAll('[data-review-fb]').forEach(b=>b.addEventListener('click', ()=>sendOrderReviewSms(b.dataset.reviewFb, 'facebook')));
   document.querySelectorAll('[data-review-google]').forEach(b=>b.addEventListener('click', ()=>sendOrderReviewSms(b.dataset.reviewGoogle, 'google')));
+  document.querySelectorAll('[data-open-delivery-outcome]').forEach(b=>b.addEventListener('click', ()=>openModal('deliveryoutcome:'+b.dataset.openDeliveryOutcome)));
+  document.querySelectorAll('[data-set-delivery-outcome]').forEach(b=>b.addEventListener('click', ()=>{
+    const [orderId, outcome] = b.dataset.setDeliveryOutcome.split(':');
+    setDeliveryOutcome(orderId, outcome);
+  }));
   if(byIdEl('customer-import-input')) byIdEl('customer-import-input').addEventListener('change', async e=>{
     const file = e.target.files && e.target.files[0];
     if(!file) return;
