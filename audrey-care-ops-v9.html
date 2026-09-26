@@ -2975,7 +2975,7 @@ function renderRatingBlock(o){
       <label style="text-align:center;display:block;">Rate us</label>
       <div style="text-align:center;font-size:30px;letter-spacing:6px;color:#D4A017;">${'★'.repeat(draft.value)}${'☆'.repeat(5-draft.value)}</div>
       <form id="form-rating-feedback">
-        <textarea name="feedback" placeholder="What went wrong? (optional)" style="min-height:70px;margin-top:8px;"></textarea>
+        ${draft.value<=3 ? `<textarea name="feedback" placeholder="What went wrong? (optional)" style="min-height:70px;margin-top:8px;"></textarea>` : ''}
         <div style="display:flex;justify-content:center;gap:10px;margin-top:8px;">
           <button type="button" class="btn btn-sm" id="btn-rating-feedback-back">← Choose again</button>
           <button type="submit" class="btn btn-primary btn-sm">Submit</button>
@@ -3011,9 +3011,8 @@ function attachTrackHandlers(){
     stars.forEach((star, idx)=>{
       star.addEventListener('mouseenter', ()=>{ stars.forEach((s,i)=>{ s.textContent = i<=idx ? '★' : '☆'; }); });
       star.addEventListener('click', ()=>{
-        const value = idx+1;
-        if(value<=3){ state._ratingFeedbackDraft = {orderId: wrap.dataset.orderId, value}; render(); }
-        else submitCustomerRating(wrap.dataset.orderId, value);
+        state._ratingFeedbackDraft = {orderId: wrap.dataset.orderId, value: idx+1};
+        render();
       });
     });
     wrap.addEventListener('mouseleave', ()=>{ stars.forEach(s=>{ s.textContent='☆'; }); });
@@ -3022,7 +3021,7 @@ function attachTrackHandlers(){
     e.preventDefault();
     const draft = state._ratingFeedbackDraft;
     if(!draft) return;
-    const feedback = (e.target.feedback.value||'').trim();
+    const feedback = e.target.feedback ? (e.target.feedback.value||'').trim() : '';
     state._ratingFeedbackDraft = null;
     submitCustomerRating(draft.orderId, draft.value, feedback);
   });
