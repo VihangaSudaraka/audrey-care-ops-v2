@@ -633,6 +633,11 @@ const supabaseClient = BACKEND_CONFIGURED ? window.supabase.createClient(SUPABAS
 // Leave as 'PASTE_SMS_APP_SECRET' to disable the SMS feature entirely.
 const SMS_APP_SECRET = '6f2c9e7a-4b1d-4a3f-9c8e-1d7b5a2f6e3c-audrey';
 const SMS_CONFIGURED = SMS_APP_SECRET !== 'PASTE_SMS_APP_SECRET';
+// Must match the CITYPAK_APP_SECRET set on the track-citypak Edge Function
+// (supabase/functions/track-citypak). Leave as 'PASTE_CITYPAK_APP_SECRET' to fall back to a plain
+// link to CityPak's own tracking site instead of showing live tracking inline.
+const CITYPAK_APP_SECRET = 'PASTE_CITYPAK_APP_SECRET';
+const CITYPAK_CONFIGURED = CITYPAK_APP_SECRET !== 'PASTE_CITYPAK_APP_SECRET';
 
 const SYNCED_KEYS = ['orders','staff','customers','suppliers','complaints','chat','templates','recipes','activeBatch','gmpChecklistEntries','blendBatches','branding','navOrder','deliveryLines','staffCategories','theme','smsTemplates','orderSettings','smsCampaigns','complaintCategories','complaintPriorities','bulkSmsTemplates','navLabels'];
 const DEFAULT_ORDER_SETTINGS = {smsAutoSend:true, dragEnabled:false};
@@ -678,6 +683,64 @@ async function sendSms(recipient, message){
 }
 function orderTrackLink(id){
   return location.origin + location.pathname + '#track/' + encodeURIComponent(id);
+}
+/* Fetches live delivery tracking for a CityPak tracking number via the track-citypak Edge
+   Function (which holds the real CityPak API key — customers' browsers never see it).
+   Returns {ok:true, data} or {ok:false, error}. Never throws. */
+async function fetchCitypakTracking(trackingNumber){
+  if(!CITYPAK_CONFIGURED) return { ok:false, error:'Live tracking is not set up yet.' };
+  if(!trackingNumber) return { ok:false, error:'No CityPak tracking number on this order.' };
+  try{
+    const res = await fetch(SUPABASE_URL + '/functions/v1/track-citypak?tracking_number=' + encodeURIComponent(trackingNumber), {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+        'x-citypak-secret': CITYPAK_APP_SECRET
+      }
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.ok){
+      const base = (data && data.error) || ('CityPak tracking error ('+res.status+')');
+      return { ok:false, error: base };
+    }
+    return { ok:true, data: data.data };
+  }catch(e){
+    return { ok:false, error: 'Could not reach the tracking service.' };
+  }
+}
+// Fetches (once) and caches a CityPak tracking number's live status, then re-renders the
+// public track page to show it. Safe to call on every render — it only fetches the first time.
+async function ensureCitypakTracking(trackingNumber){
+  if(!state._citypakTracking) state._citypakTracking = {};
+  if(state._citypakTracking[trackingNumber]) return;
+  state._citypakTracking[trackingNumber] = {loading:true};
+  const result = await fetchCitypakTracking(trackingNumber);
+  state._citypakTracking[trackingNumber] = result;
+  if(state.trackMode) render();
+}
+function renderCitypakTrackingBlock(trackingNumber){
+  const fallbackLink = `<div style="text-align:center;margin-top:10px;"><a href="${CITYPAK_TRACK_URL}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none;display:inline-block;">Track with CityPak →</a></div>`;
+  if(!CITYPAK_CONFIGURED) return fallbackLink;
+  const cached = state._citypakTracking && state._citypakTracking[trackingNumber];
+  if(!cached || cached.loading){
+    return `<div class="hint" style="text-align:center;margin-top:14px;">Loading delivery tracking…</div>`;
+  }
+  if(!cached.ok){
+    return `<div style="text-align:center;margin-top:10px;">
+      <div class="hint" style="color:var(--danger);margin-bottom:8px;">${esc(cached.error||'Could not load delivery tracking right now.')}</div>
+      ${fallbackLink}
+    </div>`;
+  }
+  const d = cached.data || {};
+  const history = (d.tracking_history||[]).slice().reverse();
+  if(!history.length) return fallbackLink;
+  return `
+  <div class="field" style="margin-top:18px;">
+    <label style="text-align:center;display:block;">Delivery tracking${d.is_delivered ? ' — delivered' : ''}</label>
+    <div class="timeline">
+      ${history.map(h=>`<div class="item">${esc(h.status_type||'')}${h.location?' · '+esc(h.location):''}${h.description?' — '+esc(h.description):''}<div class="t">${esc(h.date||'')} ${esc(h.time||'')}</div></div>`).join('')}
+    </div>
+  </div>`;
 }
 async function sendBulkSms(){
   if(!isAdmin() || !SMS_CONFIGURED) return;
@@ -2893,12 +2956,16 @@ function renderTrackResult(o){
     ${stage>=STAGES.length-1 ? '🎉 Picked up by delivery — thank you!' : `Currently: <strong style="color:var(--ink);">${STAGES[stage]}</strong>`}
   </div>
   ${o.courierService && stage>=3 ? `<div class="hint" style="text-align:center;margin-top:6px;">Courier: ${esc(o.courierService)}${o.courierNumber?(' · '+esc(o.courierNumber)):''}</div>` : ''}
-  ${o.courierService==='CityPak' && o.courierNumber && stage>=3 ? `<div style="text-align:center;margin-top:10px;"><a href="${CITYPAK_TRACK_URL}" target="_blank" rel="noopener" class="btn btn-primary" style="text-decoration:none;display:inline-block;">Track with CityPak →</a></div>` : ''}
+  ${o.courierService==='CityPak' && o.courierNumber && stage>=3 ? renderCitypakTrackingBlock(o.courierNumber) : ''}
   `;
 }
 function attachTrackHandlers(){
   const el = id=>document.getElementById(id);
   if(el('form-track')) el('form-track').addEventListener('submit', submitTrack);
+  const o = state.trackedOrderId ? byId(state.orders, state.trackedOrderId) : null;
+  if(o && o.courierService==='CityPak' && o.courierNumber && o.stage>=3 && CITYPAK_CONFIGURED){
+    ensureCitypakTracking(o.courierNumber);
+  }
 }
 
 /* ===================== Customer complaint form ===================== */
