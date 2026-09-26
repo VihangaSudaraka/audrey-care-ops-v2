@@ -2953,9 +2953,7 @@ function renderTrackResult(o){
       </div>`;
     }).join('')}
   </div>
-  <div class="hint" style="text-align:center;margin:16px 0 0;font-size:13px;">
-    ${stage>=STAGES.length-1 ? 'Picked up by delivery — thank you!' : `Currently: <strong style="color:var(--ink);">${STAGES[stage]}</strong>`}
-  </div>
+  ${stage<STAGES.length-1 ? `<div class="hint" style="text-align:center;margin:16px 0 0;font-size:13px;">Currently: <strong style="color:var(--ink);">${STAGES[stage]}</strong></div>` : ''}
   ${o.courierService && stage>=3 ? `<div class="hint" style="text-align:center;margin-top:6px;">Courier: ${esc(o.courierService)}${o.courierNumber?(' · '+esc(o.courierNumber)):''}</div>` : ''}
   ${stage>=3 ? renderRatingBlock(o) : ''}
   ${o.courierService==='CityPak' && o.courierNumber && stage>=3 ? renderCitypakTrackingBlock(o.courierNumber) : ''}
