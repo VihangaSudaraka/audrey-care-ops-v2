@@ -2953,10 +2953,13 @@ function renderTrackResult(o){
     }).join('')}
   </div>
   <div class="hint" style="text-align:center;margin:16px 0 0;font-size:13px;">
-    ${stage>=STAGES.length-1 ? '🎉 Picked up by delivery — thank you!' : `Currently: <strong style="color:var(--ink);">${STAGES[stage]}</strong>`}
+    ${stage>=STAGES.length-1 ? 'Picked up by delivery — thank you!' : `Currently: <strong style="color:var(--ink);">${STAGES[stage]}</strong>`}
   </div>
   ${o.courierService && stage>=3 ? `<div class="hint" style="text-align:center;margin-top:6px;">Courier: ${esc(o.courierService)}${o.courierNumber?(' · '+esc(o.courierNumber)):''}</div>` : ''}
   ${o.courierService==='CityPak' && o.courierNumber && stage>=3 ? renderCitypakTrackingBlock(o.courierNumber) : ''}
+  <div style="text-align:center;margin-top:16px;">
+    <a href="tel:0117114040" class="btn btn-sm" style="text-decoration:none;display:inline-block;">Hotline: 011 711 4040</a>
+  </div>
   `;
 }
 function attachTrackHandlers(){
