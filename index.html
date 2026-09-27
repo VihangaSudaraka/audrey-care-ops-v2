@@ -395,13 +395,15 @@
 
   /* ---------------- Login screen ---------------- */
   .login-screen{min-height:100vh;display:flex;align-items:stretch;background:#fff;}
-  .login-illustration{flex:1.1;display:flex;align-items:center;justify-content:center;background:#EAF7EE;padding:40px;min-width:0;overflow:hidden;position:relative;}
-  .login-illustration-logo{width:100%;max-width:300px;height:auto;display:block;position:relative;z-index:1;}
+  .login-illustration{flex:1.1;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#EAF7EE 0%,#D7F0E0 55%,#EAF7EE 100%);padding:40px;min-width:0;overflow:hidden;position:relative;}
+  .login-glass-card{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;padding:44px 48px;border-radius:28px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.6);box-shadow:0 12px 40px rgba(20,70,42,.18),inset 0 1px 0 rgba(255,255,255,.8);backdrop-filter:blur(26px) saturate(200%);-webkit-backdrop-filter:blur(26px) saturate(200%);}
+  .login-illustration-logo{width:100%;max-width:260px;height:auto;display:block;position:relative;z-index:1;}
   .login-panel{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 32px;position:relative;overflow:hidden;}
   .login-panel-inner{width:100%;max-width:380px;margin-top:-72px;position:relative;z-index:1;}
   .login-blob{position:absolute;border-radius:50%;filter:blur(60px);pointer-events:none;z-index:0;}
-  .login-illustration .login-blob-1{width:260px;height:260px;background:var(--accent);opacity:.3;top:-70px;left:-60px;animation:blob-drift-1 24s ease-in-out infinite alternate;}
-  .login-illustration .login-blob-2{width:220px;height:220px;background:var(--accent-dark);opacity:.22;bottom:-60px;right:10%;animation:blob-drift-2 28s ease-in-out infinite alternate;}
+  .login-illustration .login-blob-1{width:300px;height:300px;background:var(--accent);opacity:.5;top:-80px;left:-40px;animation:blob-drift-1 24s ease-in-out infinite alternate;}
+  .login-illustration .login-blob-2{width:260px;height:260px;background:var(--accent-dark);opacity:.4;bottom:-40px;right:5%;animation:blob-drift-2 28s ease-in-out infinite alternate;}
+  .login-illustration .login-blob-3{width:220px;height:220px;background:var(--accent-dark);opacity:.28;top:50%;left:30%;animation:blob-drift-3 22s ease-in-out infinite alternate;}
   .login-panel .login-blob-1{width:240px;height:240px;background:var(--accent-soft);opacity:.6;top:-50px;right:-60px;animation:blob-drift-2 26s ease-in-out infinite alternate;}
   .login-panel .login-blob-2{width:200px;height:200px;background:var(--accent);opacity:.18;bottom:-40px;left:-50px;animation:blob-drift-1 30s ease-in-out infinite alternate;}
   .login-panel .login-blob-3{width:160px;height:160px;background:var(--accent-dark);opacity:.14;top:45%;right:8%;animation:blob-drift-3 22s ease-in-out infinite alternate;}
@@ -3256,7 +3258,10 @@ function renderLogin(){
     <div class="login-illustration">
       <div class="login-blob login-blob-1"></div>
       <div class="login-blob login-blob-2"></div>
-      <img src="${currentLogo()}" alt="Audrey" class="login-illustration-logo">
+      <div class="login-blob login-blob-3"></div>
+      <div class="login-glass-card">
+        <img src="${currentLogo()}" alt="Audrey" class="login-illustration-logo">
+      </div>
     </div>
     <div class="login-panel">
       <div class="login-blob login-blob-1"></div>
